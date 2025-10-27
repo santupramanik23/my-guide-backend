@@ -20,6 +20,9 @@ const activitySchema = new mongoose.Schema(
         "adventure",
         "entertainment",
         "shopping",
+        "fun",
+        "games",
+        "sports",
         "historical"
       ],
       index: true,
