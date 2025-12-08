@@ -39,6 +39,7 @@
     "rate-limit-mongo": "^2.3.2",
     "razorpay": "^2.9.4",
     "readline-sync": "^1.4.10",
+    "streamifier": "^0.1.1",
     "xss": "^1.0.15",
     "zod": "^4.1.7"
   },

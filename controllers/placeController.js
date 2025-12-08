@@ -1,330 +1,233 @@
-// import createError from "http-errors";
-// import { z } from "zod";
-// import { Place } from "../models/Place.js";
-// import { Activity } from "../models/Activity.js";
-
-// const schema = z.object({
-//   name: z.string().min(2).max(100),
-//   description: z.string().max(2000).optional(),
-//   location: z.object({
-//     city: z.string().max(100).optional(),
-//     country: z.string().max(100).optional(),
-//     coordinates: z.tuple([z.number(), z.number()]).optional(),
-//   }).optional(),
-//   images: z.array(z.string().url()).max(10).optional(),
-//   tags: z.array(z.string().min(1).max(50)).max(20).optional(),
-//   isActive: z.boolean().optional(),
-// });
-
-// export const createPlace = async (req, res, next) => {
-//   try {
-//     const data = schema.parse(req.body);
-//     const place = await Place.create(data);
-//     res.status(201).json({ message: "Place created", data: { place } });
-//   } catch (err) { next(err); }
-// };
-
-// export const listPlaces = async (req, res, next) => {
-//   try {
-//     const { 
-//       q, country, tag, 
-//       page = 1, limit = 20,
-//       sortBy = 'createdAt', sortOrder = 'desc'
-//     } = req.query;
-    
-//     const filter = { isActive: true };
-    
-//     if (q) {
-//       filter.$or = [
-//         { name: { $regex: String(q), $options: "i" } },
-//         { description: { $regex: String(q), $options: "i" } }
-//       ];
-//     }
-//     if (country) filter["country"] = { $regex: String(country), $options: "i" };
-//     if (tag) filter.tags = String(tag);
-    
-//     const skip = (Number(page) - 1) * Number(limit);
-//     const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
-    
-//     const [places, total] = await Promise.all([
-//       Place.find(filter)
-//         .sort(sort)
-//         .skip(skip)
-//         .limit(Number(limit)),
-//       Place.countDocuments(filter)
-//     ]);
-    
-//     res.json({ 
-//       data: { 
-//         places,
-//         pagination: {
-//           page: Number(page),
-//           limit: Number(limit),
-//           total,
-//           pages: Math.ceil(total / Number(limit))
-//         }
-//       } 
-//     });
-//   } catch (err) { next(err); }
-// };
-
-// export const getPlace = async (req, res, next) => {
-//   try {
-//     const [place, activities] = await Promise.all([
-//       Place.findById(req.params.id),
-//       Activity.find({ place: req.params.id, isActive: true })
-//         .select('title price durationMinutes images tags')
-//     ]);
-    
-//     if (!place) throw createError(404, "Place not found");
-    
-//     res.json({ 
-//       data: { 
-//         place: {
-//           ...place.toJSON(),
-//           activities,
-//           activityCount: activities.length
-//         }
-//       } 
-//     });
-//   } catch (err) { next(err); }
-// };
-
-// export const updatePlace = async (req, res, next) => {
-//   try {
-//     const data = schema.partial().parse(req.body);
-//     const place = await Place.findByIdAndUpdate(req.params.id, data, { new: true });
-//     if (!place) throw createError(404, "Place not found");
-    
-//     res.json({ message: "Place updated", data: { place } });
-//   } catch (err) { next(err); }
-// };
-
-// export const deletePlace = async (req, res, next) => {
-//   try {
-//     // Check if place has activities
-//     const activityCount = await Activity.countDocuments({ place: req.params.id });
-//     if (activityCount > 0) {
-//       throw createError(400, "Cannot delete place with existing activities");
-//     }
-    
-//     const place = await Place.findByIdAndDelete(req.params.id);
-//     if (!place) throw createError(404, "Place not found");
-    
-//     res.json({ message: "Place deleted", data: { id: place._id } });
-//   } catch (err) { next(err); }
-// };
 import createError from "http-errors";
 import { z } from "zod";
-import { Place } from "../models/Place.js";
+import { Place, PLACE_CATEGORIES } from "../models/Place.js";
 import { Activity } from "../models/Activity.js";
 
-const schema = z.object({
-  name: z.string().min(2).max(100),
-  description: z.string().max(2000).optional(),
-  category: z.string().optional(),
-  city: z.string().max(100).optional(),
-  country: z.string().max(100).optional(),
-  featured: z.boolean().optional(),
-  tags: z.array(z.string().min(1).max(50)).max(20).optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-});
+const zCategory = z
+  .enum(PLACE_CATEGORIES, {
+    errorMap: () => ({ message: "category must be one of: " + PLACE_CATEGORIES.join(", ") }),
+  })
+  .optional()
+  .default("cultural"); // make required if you want to enforce selection
 
-// ✅ FIXED: Handle FormData with coordinates
+const createPlaceSchema = z
+  .object({
+    name: z.string().trim().min(2, "name must be at least 2 chars").max(100),
+    description: z.string().max(2000).optional().default(""),
+    category: zCategory,
+    city: z.string().max(100).optional().default(""),
+    country: z.string().max(100).optional().default(""),
+    featured: z.coerce.boolean().optional().default(false),
+    tags: z
+      .union([z.array(z.string().min(1).max(50)), z.string().min(1).max(50)])
+      .optional()
+      .transform((v) => (Array.isArray(v) ? v : v ? [v] : []))
+      .refine((arr) => arr.length <= 20, "tags must be <= 20"),
+    images: z
+      .union([z.array(z.string().min(1)), z.string().min(1)])
+      .optional()
+      .transform((v) => (Array.isArray(v) ? v : v ? [v] : [])),
+    latitude: z.coerce.number().min(-90).max(90).optional().default(22.5726),
+    longitude: z.coerce.number().min(-180).max(180).optional().default(88.3639),
+    isActive: z.coerce.boolean().optional().default(true),
+  })
+  .transform((v) => ({
+    name: v.name,
+    description: v.description,
+    category: v.category,
+    city: v.city,
+    country: v.country,
+    featured: v.featured,
+    tags: v.tags,
+    images: v.images,
+    location: { type: "Point", coordinates: [v.longitude, v.latitude] },
+    isActive: v.isActive,
+  }));
+
+const updatePlaceSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100).optional(),
+    description: z.string().max(2000).optional(),
+    category: z.enum(PLACE_CATEGORIES).optional(),
+    city: z.string().max(100).optional(),
+    country: z.string().max(100).optional(),
+    featured: z.coerce.boolean().optional(),
+    tags: z.array(z.string().min(1).max(50)).max(20).optional(),
+    images: z.array(z.string().min(1)).optional(),
+    latitude: z.coerce.number().min(-90).max(90).optional(),
+    longitude: z.coerce.number().min(-180).max(180).optional(),
+    isActive: z.coerce.boolean().optional(),
+  })
+  .transform((v) => {
+    const out = { ...v };
+    if (v.latitude !== undefined && v.longitude !== undefined) {
+      out.location = { type: "Point", coordinates: [v.longitude, v.latitude] };
+      delete out.latitude;
+      delete out.longitude;
+    }
+    return out;
+  });
+
+const zodBadRequest = (res, parsed) =>
+  res.status(400).json({
+    ok: false,
+    error: {
+      message: "Validation failed",
+      details: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+      })),
+    },
+  });
+
 export const createPlace = async (req, res, next) => {
   try {
-    // Parse lat/lng from FormData (comes as strings)
-    const lat = req.body.latitude ? Number(req.body.latitude) : 22.5726; // Default Kolkata
-    const lng = req.body.longitude ? Number(req.body.longitude) : 88.3639;
-
-    // Validate coordinates
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      throw createError(400, "Invalid coordinates. Latitude: -90 to 90, Longitude: -180 to 180");
-    }
-
-    // Parse featured from string "true"/"false" to boolean
-    const featured = req.body.featured === 'true' || req.body.featured === true;
-
-    // Handle tags array (from FormData comes as 'tags[]')
-    let tags = [];
-    if (req.body['tags[]']) {
-      tags = Array.isArray(req.body['tags[]']) 
-        ? req.body['tags[]'] 
-        : [req.body['tags[]']];
-    } else if (req.body.tags) {
-      tags = Array.isArray(req.body.tags) 
-        ? req.body.tags 
-        : [req.body.tags];
-    }
-
-    // Handle images from multer (req.files if using multer, or req.body.images if URLs)
-    let images = [];
-    if (req.files && req.files.length > 0) {
-      // If multer processed files, you'd have uploaded URLs here
-      // Assuming you have a cloudinary upload handler elsewhere
-      images = req.files.map(file => file.path || file.secure_url || file.url);
-    } else if (req.body.images) {
-      images = Array.isArray(req.body.images) ? req.body.images : [req.body.images];
-    }
-
-    // Build place data with GeoJSON location
-    const placeData = {
-      name: req.body.name,
-      description: req.body.description || "",
-      category: req.body.category || "",
-      city: req.body.city || "",
-      country: req.body.country || "",
-      featured: featured,
-      tags: tags.filter(Boolean).slice(0, 20), // Limit to 20 tags
-      images: images,
-      location: {
-        type: "Point",
-        coordinates: [lng, lat] // [longitude, latitude] - GeoJSON format
-      },
-      isActive: true
+    // ⚠️ Multer populates req.body (strings) + req.files (uploaded files)
+    const raw = {
+      ...req.body,
+      ...(req.body?.["tags[]"] && { tags: req.body["tags[]"] }),
+      // Optionally map uploaded file URLs if your uploader sets them:
+      images:
+        Array.isArray(req.files) && req.files.length
+          ? req.files.map((f) => f.secure_url || f.path || f.originalname).filter(Boolean)
+          : req.body.images,
     };
 
-    console.log('📍 Creating place with data:', JSON.stringify(placeData, null, 2));
+    const parsed = createPlaceSchema.safeParse(raw);
+    if (!parsed.success) {
+      return zodBadRequest(res, parsed);
+    }
 
-    const place = await Place.create(placeData);
-    
-    res.status(201).json({ 
-      message: "Place created", 
-      data: { place } 
-    });
-  } catch (err) { 
-    console.error('❌ Place creation error:', err);
-    next(err); 
+    const place = await Place.create(parsed.data);
+    return res.status(201).json({ ok: true, data: { place } });
+  } catch (err) {
+    if (err?.name === "ValidationError") {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          message: "Model validation failed",
+          details: Object.values(err.errors).map((e) => ({
+            path: e.path,
+            message: e.message,
+          })),
+        },
+      });
+    }
+    return next(err);
   }
 };
 
 export const listPlaces = async (req, res, next) => {
   try {
-    const { 
-      q, country, tag, 
-      page = 1, limit = 20,
-      sortBy = 'createdAt', sortOrder = 'desc',
-      // ✅ Add geospatial query support
-      lat, lng, maxDistance = 50000 // 50km default
+    const {
+      q,
+      country,
+      tag,
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      lat,
+      lng,
+      maxDistance = 50000,
     } = req.query;
-    
+
     const filter = { isActive: true };
-    
     if (q) {
       filter.$or = [
         { name: { $regex: String(q), $options: "i" } },
-        { description: { $regex: String(q), $options: "i" } }
+        { description: { $regex: String(q), $options: "i" } },
       ];
     }
     if (country) filter.country = { $regex: String(country), $options: "i" };
     if (tag) filter.tags = String(tag);
 
-    // ✅ Add nearby search if lat/lng provided
     if (lat && lng) {
       filter.location = {
         $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [Number(lng), Number(lat)]
-          },
-          $maxDistance: Number(maxDistance)
-        }
+          $geometry: { type: "Point", coordinates: [Number(lng), Number(lat)] },
+          $maxDistance: Number(maxDistance),
+        },
       };
     }
-    
+
     const skip = (Number(page) - 1) * Number(limit);
-    const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
-    
+    const sort = { [sortBy]: sortOrder === "desc" ? -1 : 1 };
+
     const [places, total] = await Promise.all([
-      Place.find(filter)
-        .sort(sort)
-        .skip(skip)
-        .limit(Number(limit)),
-      Place.countDocuments(filter)
+      Place.find(filter).sort(sort).skip(skip).limit(Number(limit)),
+      Place.countDocuments(filter),
     ]);
-    
-    res.json({ 
-      data: { 
+
+    return res.json({
+      ok: true,
+      data: {
         places,
         pagination: {
           page: Number(page),
           limit: Number(limit),
           total,
-          pages: Math.ceil(total / Number(limit))
-        }
-      } 
+          pages: Math.ceil(total / Number(limit)),
+        },
+      },
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 };
 
 export const getPlace = async (req, res, next) => {
   try {
     const [place, activities] = await Promise.all([
       Place.findById(req.params.id),
-      Activity.find({ place: req.params.id, isActive: true })
-        .select('title price durationMinutes images tags')
+      Activity.find({ place: req.params.id, isActive: true }).select(
+        "title price durationMinutes images tags"
+      ),
     ]);
-    
     if (!place) throw createError(404, "Place not found");
-    
-    res.json({ 
-      data: { 
-        place: {
-          ...place.toJSON(),
-          activities,
-          activityCount: activities.length
-        }
-      } 
+    return res.json({
+      ok: true,
+      data: {
+        place: { ...place.toJSON(), activities, activityCount: activities.length },
+      },
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 };
 
 export const updatePlace = async (req, res, next) => {
   try {
-    // Handle coordinate updates
-    const updateData = { ...req.body };
-    
-    if (req.body.latitude && req.body.longitude) {
-      const lat = Number(req.body.latitude);
-      const lng = Number(req.body.longitude);
-      
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        throw createError(400, "Invalid coordinates");
-      }
-      
-      updateData.location = {
-        type: "Point",
-        coordinates: [lng, lat]
-      };
-      
-      delete updateData.latitude;
-      delete updateData.longitude;
+    const parsed = updatePlaceSchema.safeParse({
+      ...req.body,
+      ...(req.body?.["tags[]"] && { tags: req.body["tags[]"] }),
+    });
+    if (!parsed.success) {
+      return zodBadRequest(res, parsed);
     }
 
-    const place = await Place.findByIdAndUpdate(
-      req.params.id, 
-      updateData, 
-      { new: true }
-    );
-    
+    const place = await Place.findByIdAndUpdate(req.params.id, parsed.data, {
+      new: true,
+      runValidators: true,
+    });
     if (!place) throw createError(404, "Place not found");
-    
-    res.json({ message: "Place updated", data: { place } });
-  } catch (err) { next(err); }
+    return res.json({ ok: true, message: "Place updated", data: { place } });
+  } catch (err) {
+    next(err);
+  }
 };
 
 export const deletePlace = async (req, res, next) => {
   try {
-    // Check if place has activities
     const activityCount = await Activity.countDocuments({ place: req.params.id });
     if (activityCount > 0) {
       throw createError(400, "Cannot delete place with existing activities");
     }
-    
     const place = await Place.findByIdAndDelete(req.params.id);
     if (!place) throw createError(404, "Place not found");
-    
-    res.json({ message: "Place deleted", data: { id: place._id } });
-  } catch (err) { next(err); }
+    return res.json({ ok: true, message: "Place deleted", data: { id: place.id } });
+  } catch (err) {
+    next(err);
+  }
 };
+

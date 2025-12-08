@@ -1,4 +1,18 @@
+
+
 import mongoose from "mongoose";
+
+export const PLACE_CATEGORIES = [
+  "cultural",
+  "nature",
+  "art",
+  "spiritual",
+  "food",
+  "entertainment",
+  "shopping",
+  "historical",
+  "architectural",
+];
 
 const placeSchema = new mongoose.Schema(
   {
@@ -7,32 +21,30 @@ const placeSchema = new mongoose.Schema(
 
     category: {
       type: String,
-      enum: ["cultural", "nature", "art", "spiritual", "food", "entertainment", "shopping", "historical", "architectural"],
+      enum: PLACE_CATEGORIES,
+      required: true,
       index: true,
     },
     featured: { type: Boolean, default: false, index: true },
 
-    // Keep flat fields for easy access
     city: { type: String, trim: true, index: true },
     country: { type: String, trim: true, index: true },
 
-    // ✅ Proper GeoJSON Point
     location: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        required: true,
-        default: "Point",
-      },
+      type: { type: String, enum: ["Point"], required: true, default: "Point" },
       coordinates: {
         type: [Number], // [lng, lat]
         required: true,
         validate: {
           validator(v) {
-            return Array.isArray(v) &&
+            return (
+              Array.isArray(v) &&
               v.length === 2 &&
-              v[0] >= -180 && v[0] <= 180 &&
-              v[1] >= -90  && v[1] <= 90;
+              v[0] >= -180 &&
+              v[0] <= 180 &&
+              v[1] >= -90 &&
+              v[1] <= 90
+            );
           },
           message: "location.coordinates must be [lng, lat] within valid ranges",
         },
@@ -43,19 +55,14 @@ const placeSchema = new mongoose.Schema(
     tags: [{ type: String, index: true }],
     isActive: { type: Boolean, default: true, index: true },
   },
-  
   { timestamps: true }
 );
 
-// ✅ 2dsphere index on the GeoJSON field (NOT on 'coordinates')
 placeSchema.index({ location: "2dsphere" });
-
-// Helpful compound indexes
 placeSchema.index({ city: 1, country: 1 });
 placeSchema.index({ category: 1, featured: 1 });
 placeSchema.index({ featured: 1, isActive: 1 });
 
-// Optional: tag normalization
 placeSchema.pre("save", function (next) {
   if (Array.isArray(this.tags)) {
     this.tags = this.tags
