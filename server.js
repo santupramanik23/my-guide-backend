@@ -227,9 +227,7 @@ app.use("/api", limiter, apiRouter);
 /* ----------------------------- Error Handling ----------------------------- */
 // Handle upload errors specifically
 app.use(handleUploadError);
-/* =================================================
-   FRONTEND BUILD SERVING (FIXES YOUR 404 ERROR)
-   ================================================= */
+
 const frontendPath = path.join(__dirname, "../../tour-guide-frontend/dist");
 app.use(express.static(frontendPath));
 
