@@ -153,7 +153,7 @@ app.get("/health", (_req, res) => {
     uptime: process.uptime(),
     message: 'OK',
     timestamp: Date.now(),
-    service: "tour-guide-backend",
+    service: "my-guide-backend",
     version: process.env.npm_package_version || "1.0.0",
     environment: process.env.NODE_ENV || "development",
     nodeVersion: process.version,
@@ -228,7 +228,7 @@ app.use("/api", limiter, apiRouter);
 // Handle upload errors specifically
 app.use(handleUploadError);
 
-const frontendPath = path.join(__dirname, "../../tour-guide-frontend/dist");
+const frontendPath = path.join(__dirname, "../../my-guide-frontend/dist");
 app.use(express.static(frontendPath));
 
 app.get("*", (req, res) => {
