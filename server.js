@@ -230,7 +230,7 @@ app.use(handleUploadError);
 /* =================================================
    FRONTEND BUILD SERVING (FIXES YOUR 404 ERROR)
    ================================================= */
-const frontendPath = path.join(__dirname, "../tour-guide-frontend/dist");
+const frontendPath = path.join(__dirname, "../../tour-guide-frontend/dist");
 app.use(express.static(frontendPath));
 
 app.get("*", (req, res) => {
