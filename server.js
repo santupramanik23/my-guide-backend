@@ -228,12 +228,14 @@ app.use("/api", limiter, apiRouter);
 // Handle upload errors specifically
 app.use(handleUploadError);
 
-const frontendPath = path.join(__dirname, "./my-guide-frontend/dist");
+const frontendPath = path.join(__dirname, "../my-guide-frontend/dist");
+
 app.use(express.static(frontendPath));
 
 app.get("*", (req, res) => {
   res.sendFile(path.join(frontendPath, "index.html"));
 });
+
 
 // 404 handler
 app.use(notFound);
