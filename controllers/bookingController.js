@@ -1,205 +1,18 @@
-
-// import createError from "http-errors";
-// import { z } from "zod";
-// import { Booking } from "../models/Booking.js";
-// import { Activity } from "../models/Activity.js";
-
-// const createSchema = z.object({
-//   placeId: z.string().length(24).optional(),
-//   activityId: z.string().length(24).optional(),
-//   activity: z.string().length(24).optional(),
-//   date: z.coerce.date(),
-//   time: z.string().optional(),
-//   participants: z.number().int().min(1).max(50).optional(),
-//   peopleCount: z.number().int().min(1).max(50).optional(),
-//   participantDetails: z.array(z.object({
-//     name: z.string().optional(),
-//     email: z.string().email().optional(),
-//     phone: z.string().optional(),
-//   })).optional(),
-//   specialRequests: z.string().max(2000).optional(),
-//   notes: z.string().max(500).optional(),
-//   totalAmount: z.number().nonnegative().optional(),
-// }).refine((data) => data.placeId || data.activityId || data.activity, {
-//   message: "Either placeId, activityId, or activity must be provided.",
-// });
-
-// export const createBooking = async (req, res, next) => {
-//   try {
-//     const body = createSchema.parse(req.body);
-
-//     // Handle both field names
-//     const activityId = body.activity || body.activityId;
-//     const participants = body.participants || body.peopleCount || 1;
-
-//     // Calculate total amount if not provided
-//     let totalAmount = body.totalAmount;
-//     if (!totalAmount && activityId) {
-//       const activity = await Activity.findById(activityId);
-//       if (activity) {
-//         totalAmount = activity.price * participants;
-//       }
-//     }
-
-//     const booking = await Booking.create({
-//       user: req.user.id,
-//       place: body.placeId,
-//       activity: activityId,
-//       date: body.date,
-//       time: body.time,
-//       participants,
-//       peopleCount: participants,
-//       participantDetails: body.participantDetails || [],
-//       specialRequests: body.specialRequests || body.notes || "",
-//       notes: body.notes || body.specialRequests || "",
-//       totalAmount: totalAmount || 0,
-//       status: "pending",
-//       paymentStatus: "pending",
-//     });
-
-//     const populatedBooking = await Booking.findById(booking._id)
-//       .populate("place", "name location")
-//       .populate("activity", "title price category");
-
-//     res.status(201).json({ 
-//       message: "Booking created", 
-//       data: { booking: populatedBooking } 
-//     });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const myBookings = async (req, res, next) => {
-//   try {
-//     const bookings = await Booking.find({ user: req.user.id })
-//       .populate("place", "name location")
-//       .populate("activity", "title price city category")
-//       .sort({ createdAt: -1 });
-
-//     res.json({ data: { bookings } });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const getBookingById = async (req, res, next) => {
-//   try {
-//     const booking = await Booking.findById(req.params.id)
-//       .populate("activity", "title city price category")
-//       .populate("place", "name location")
-//       .populate("user", "name email");
-
-//     if (!booking) throw createError(404, "Booking not found");
-
-//     // Check authorization
-//     if (booking.user._id.toString() !== req.user.id && req.user.role !== "admin") {
-//       throw createError(403, "Not authorized");
-//     }
-
-//     res.json({ data: { booking } });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const allBookings = async (_req, res, next) => {
-//   try {
-//     const bookings = await Booking.find()
-//       .populate("user", "name email role")
-//       .populate("place", "name")
-//       .populate("activity", "title price")
-//       .sort({ createdAt: -1 });
-
-//     res.json({ data: { bookings } });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const updateBookingStatus = async (req, res, next) => {
-//   try {
-//     const { status } = z
-//       .object({ status: z.enum(["pending", "confirmed", "cancelled", "completed"]) })
-//       .parse(req.body);
-
-//     const booking = await Booking.findByIdAndUpdate(
-//       req.params.id, 
-//       { status }, 
-//       { new: true }
-//     );
-
-//     if (!booking) throw createError(404, "Booking not found");
-
-//     res.json({ message: "Status updated", data: { booking } });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const cancelBooking = async (req, res, next) => {
-//   try {
-//     const booking = await Booking.findById(req.params.id);
-
-//     if (!booking) throw createError(404, "Booking not found");
-
-//     if (booking.user.toString() !== req.user.id && req.user.role !== "admin") {
-//       throw createError(403, "Not authorized");
-//     }
-
-//     if (booking.status === "cancelled") {
-//       throw createError(400, "Booking already cancelled");
-//     }
-
-//     booking.status = "cancelled";
-//     await booking.save();
-
-//     res.json({ 
-//       message: "Booking cancelled", 
-//       data: { booking } 
-//     });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
-
-// export const confirmPayment = async (req, res, next) => {
-//   try {
-//     const { bookingId, paymentId } = z.object({
-//       bookingId: z.string().length(24),
-//       paymentId: z.string(),
-//     }).parse(req.body);
-
-//     const booking = await Booking.findById(bookingId);
-
-//     if (!booking) throw createError(404, "Booking not found");
-
-//     if (booking.user.toString() !== req.user.id) {
-//       throw createError(403, "Not authorized");
-//     }
-
-//     booking.status = "confirmed";
-//     booking.paymentStatus = "paid";
-//     booking.paymentId = paymentId;
-//     await booking.save();
-
-//     res.json({ 
-//       message: "Payment confirmed", 
-//       data: { booking } 
-//     });
-//   } catch (err) {
-//     next(err);
-//   }
-// };
 import createError from "http-errors";
 import { Booking } from "../models/Booking.js";
 import { Activity } from "../models/Activity.js";
 import { Place } from "../models/Place.js";
+import { PRICING, BOOKING } from "../config/constants.js";
+import { sendBookingConfirmation, sendCancellationEmail } from "../services/emailService.js";
+import { generateBookingReceipt } from "../services/pdfService.js";
+import { getRecommendationsForBooking } from "../services/recommendationService.js";
+
+const DEV = process.env.NODE_ENV !== 'production';
 
 // Create Booking
 export const createBooking = async (req, res, next) => {
   try {
-    console.log("📦 Creating booking for user:", req.user.id);
+    if (DEV) console.log("📦 Creating booking for user:", req.user.id);
     
     const body = req.body;
     
@@ -226,10 +39,10 @@ export const createBooking = async (req, res, next) => {
       }
       
       if (item) {
-        const basePrice = item.price || item.basePrice || 99;
+        const basePrice = item.price || item.basePrice || PRICING.DEFAULT_BASE_PRICE;
         const subtotal = basePrice * participants;
-        const tax = Math.round(subtotal * 0.18);
-        const serviceFee = Math.round(subtotal * 0.05);
+        const tax = Math.round(subtotal * PRICING.TAX_RATE);
+        const serviceFee = Math.round(subtotal * PRICING.SERVICE_FEE_RATE);
         const promoOff = pricing.promoOff || 0;
         totalAmount = Math.max(0, subtotal + tax + serviceFee - promoOff);
         
@@ -272,14 +85,25 @@ export const createBooking = async (req, res, next) => {
       .populate("place", "name title location city images rating")
       .populate("activity", "title name price basePrice city duration images rating category");
 
-    console.log("✅ Booking created:", populatedBooking._id);
+    if (DEV) console.log("✅ Booking created:", populatedBooking._id);
 
-    res.status(201).json({ 
-      message: "Booking created successfully", 
-      data: { booking: populatedBooking } 
+    // Send confirmation email (async, don't wait for it)
+    const item = populatedBooking.activity || populatedBooking.place;
+    const user = {
+      name: customerData.name,
+      email: customerData.email
+    };
+
+    sendBookingConfirmation(populatedBooking, user, item).catch(err => {
+      console.error('Failed to send booking confirmation email:', err);
+    });
+
+    res.status(201).json({
+      message: "Booking created successfully",
+      data: { booking: populatedBooking }
     });
   } catch (err) {
-    console.error("❌ Booking creation error:", err);
+    if (DEV) console.error("❌ Booking creation error:", err);
     next(err);
   }
 };
@@ -287,14 +111,14 @@ export const createBooking = async (req, res, next) => {
 // Get User's Bookings
 export const myBookings = async (req, res, next) => {
   try {
-    console.log("📋 Fetching bookings for user:", req.user.id);
+    if (DEV) console.log("📋 Fetching bookings for user:", req.user.id);
     
     const bookings = await Booking.find({ user: req.user.id })
       .populate("place", "name title location city images rating")
       .populate("activity", "title name price basePrice city duration images rating category")
       .sort({ createdAt: -1 });
 
-    console.log(`✅ Found ${bookings.length} bookings for user`);
+    if (DEV) console.log(`✅ Found ${bookings.length} bookings for user`);
 
     res.json({ 
       data: { bookings } 
@@ -308,7 +132,7 @@ export const myBookings = async (req, res, next) => {
 // Get Booking by ID
 export const getBookingById = async (req, res, next) => {
   try {
-    console.log("🔍 Fetching booking:", req.params.id);
+    if (DEV) console.log("🔍 Fetching booking:", req.params.id);
     
     const booking = await Booking.findById(req.params.id)
       .populate("activity", "title name price basePrice city duration images rating category")
@@ -335,7 +159,7 @@ export const getBookingById = async (req, res, next) => {
 // Get All Bookings (Admin)
 export const allBookings = async (req, res, next) => {
   try {
-    console.log("👑 Admin fetching all bookings");
+    if (DEV) console.log("👑 Admin fetching all bookings");
     
     const bookings = await Booking.find()
       .populate("user", "name email role")
@@ -402,13 +226,13 @@ export const cancelBooking = async (req, res, next) => {
       throw createError(400, "Booking is already cancelled");
     }
 
-    // Check cancellation time (24 hours before)
+    // Check cancellation time (minimum hours before)
     const bookingDate = new Date(booking.date);
     const now = new Date();
     const hoursDifference = (bookingDate - now) / (1000 * 60 * 60);
 
-    if (hoursDifference < 24) {
-      throw createError(400, "Cancellation must be done at least 24 hours before the booking date");
+    if (hoursDifference < BOOKING.MIN_CANCELLATION_HOURS) {
+      throw createError(400, `Cancellation must be done at least ${BOOKING.MIN_CANCELLATION_HOURS} hours before the booking date`);
     }
 
     booking.status = "cancelled";
@@ -417,13 +241,25 @@ export const cancelBooking = async (req, res, next) => {
 
     const populatedBooking = await Booking.findById(booking._id)
       .populate("activity", "title name")
-      .populate("place", "name title");
+      .populate("place", "name title")
+      .populate("user", "name email");
 
-    console.log("✅ Booking cancelled:", booking._id);
+    if (DEV) console.log("✅ Booking cancelled:", booking._id);
 
-    res.json({ 
-      message: "Booking cancelled successfully", 
-      data: { booking: populatedBooking } 
+    // Send cancellation email (async, don't wait for it)
+    const item = populatedBooking.activity || populatedBooking.place;
+    const user = populatedBooking.user || {
+      name: populatedBooking.customer?.name,
+      email: populatedBooking.customer?.email
+    };
+
+    sendCancellationEmail(populatedBooking, user, item).catch(err => {
+      console.error('Failed to send cancellation email:', err);
+    });
+
+    res.json({
+      message: "Booking cancelled successfully",
+      data: { booking: populatedBooking }
     });
   } catch (err) {
     console.error("❌ Cancel booking error:", err);
@@ -497,7 +333,7 @@ export const deleteBooking = async (req, res, next) => {
     booking.deletedAt = new Date();
     await booking.save();
 
-    console.log("✅ Booking deleted:", booking._id);
+    if (DEV) console.log("✅ Booking deleted:", booking._id);
 
     res.json({ 
       message: "Booking deleted successfully" 
@@ -589,12 +425,88 @@ export const confirmPayment = async (req, res, next) => {
       .populate("activity", "title name")
       .populate("place", "name title");
 
-    res.json({ 
-      message: "Payment confirmed successfully", 
-      data: { booking: populatedBooking } 
+    res.json({
+      message: "Payment confirmed successfully",
+      data: { booking: populatedBooking }
     });
   } catch (err) {
     console.error("❌ Confirm payment error:", err);
+    next(err);
+  }
+};
+
+// Download Booking Receipt as PDF
+export const downloadReceipt = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate("user", "name email phone")
+      .populate("activity", "title name location price basePrice")
+      .populate("place", "name title location price basePrice");
+
+    if (!booking) {
+      throw createError(404, "Booking not found");
+    }
+
+    // Check authorization
+    if (booking.user?._id.toString() !== req.user.id && req.user.role !== "admin") {
+      throw createError(403, "Not authorized to download this receipt");
+    }
+
+    const item = booking.activity || booking.place;
+    const user = booking.user || {
+      name: booking.customer?.name,
+      email: booking.customer?.email,
+      phone: booking.customer?.phone
+    };
+
+    if (DEV) console.log("📄 Generating PDF receipt for booking:", booking._id);
+
+    // Generate PDF
+    const pdfBuffer = await generateBookingReceipt(booking, user, item);
+
+    // Set response headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="booking-receipt-${booking._id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    // Send PDF
+    res.send(pdfBuffer);
+
+    if (DEV) console.log("✅ PDF receipt generated successfully");
+
+  } catch (err) {
+    console.error("❌ Download receipt error:", err);
+    next(err);
+  }
+};
+
+// Get Recommendations for Booking
+export const getBookingRecommendations = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate("activity", "title name city category price basePrice images rating duration")
+      .populate("place", "title name city location price basePrice images rating");
+
+    if (!booking) {
+      throw createError(404, "Booking not found");
+    }
+
+    // Check authorization
+    if (booking.user.toString() !== req.user.id && req.user.role !== "admin") {
+      throw createError(403, "Not authorized to view recommendations for this booking");
+    }
+
+    if (DEV) console.log("🎯 Generating recommendations for booking:", booking._id);
+
+    const recommendations = await getRecommendationsForBooking(booking);
+
+    res.json({
+      message: "Recommendations retrieved successfully",
+      data: recommendations
+    });
+
+  } catch (err) {
+    console.error("❌ Get recommendations error:", err);
     next(err);
   }
 };

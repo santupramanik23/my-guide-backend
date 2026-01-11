@@ -13,6 +13,7 @@ import apiRouter from "./routes/index.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
 import { limiter } from "./middleware/rateLimiter.js";
 import { handleUploadError } from "./middleware/upload.js";
+import { initReminderCron } from "./jobs/reminderCron.js";
 
 
 const __filename = fileURLToPath(import.meta.url);           // current file path
@@ -224,18 +225,27 @@ app.get("/health/ready", async (_req, res) => {
 /* -------------------------------- API Routes ------------------------------ */
 app.use("/api", limiter, apiRouter);
 
+/* ----------------------------- Static Frontend (Production) ----------------------------- */
+// Serve static frontend files in production (after building frontend into dist/)
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, "dist");
+
+  // Serve static files
+  app.use(express.static(frontendPath));
+
+  // SPA fallback - serve index.html for all non-API routes
+  app.get("*", (req, res, next) => {
+    // Don't serve index.html for API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendPath, "index.html"));
+  });
+}
+
 /* ----------------------------- Error Handling ----------------------------- */
 // Handle upload errors specifically
 app.use(handleUploadError);
-
-const frontendPath = path.join(__dirname, "dist");
-
-app.use(express.static(frontendPath));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
-
 
 // 404 handler
 app.use(notFound);
@@ -253,7 +263,10 @@ async function start() {
     console.log('🔌 Connecting to database...');
     await connectDB();
     console.log('✅ Database connected successfully');
-    
+
+    // Initialize cron jobs
+    initReminderCron();
+
     // Start server
     server = app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);

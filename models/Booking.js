@@ -180,6 +180,10 @@ const bookingSchema = new mongoose.Schema(
     cancellationReason: {
       type: String,
       default: ""
+    },
+    reminderSent: {
+      type: Boolean,
+      default: false
     }
   },
   { timestamps: true }

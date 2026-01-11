@@ -13,7 +13,9 @@ import {
   confirmPayment,
   updateBooking,
   deleteBooking,
-  quickUpdateStatus
+  quickUpdateStatus,
+  downloadReceipt,
+  getBookingRecommendations
 } from "../controllers/bookingController.js";
 
 const router = Router();
@@ -47,5 +49,11 @@ router.patch("/:id/quick-status", requireAuth, validateObjectIdParam("id"), quic
 
 // Confirm payment
 router.post("/confirm-payment", requireAuth, confirmPayment);
+
+// Download booking receipt as PDF
+router.get("/:id/receipt", requireAuth, validateObjectIdParam("id"), downloadReceipt);
+
+// Get recommendations for booking
+router.get("/:id/recommendations", requireAuth, validateObjectIdParam("id"), getBookingRecommendations);
 
 export default router;
