@@ -348,8 +348,150 @@ export const sendCancellationEmail = async (booking, user, item) => {
   }
 };
 
+/**
+ * Send payment confirmation email
+ */
+export const sendPaymentConfirmation = async (booking, user, item, payment) => {
+  if (!transporter) {
+    if (DEV) {
+      console.log('📧 PAYMENT CONFIRMATION EMAIL (simulated)');
+      console.log('To:', user.email);
+      console.log('Payment ID:', payment._id);
+      console.log('Amount:', `₹${payment.amount}`);
+      console.log('Booking:', item.name);
+    }
+    return;
+  }
+
+  const subject = `Payment Successful - ${item.name}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border: 1px solid #e0e0e0; }
+        .payment-card { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #10b981; }
+        .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .info-label { font-weight: bold; color: #059669; }
+        .success-badge { background: #d1fae5; color: #065f46; padding: 8px 16px; border-radius: 20px; display: inline-block; font-weight: bold; }
+        .button { display: inline-block; background: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 0.9em; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>✓ Payment Successful!</h1>
+          <p>Your booking is now fully confirmed</p>
+        </div>
+
+        <div class="content">
+          <p>Hi ${user.name},</p>
+          <p>Great news! We've received your payment and your booking is now fully confirmed.</p>
+
+          <div class="payment-card">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <span class="success-badge">✓ PAYMENT COMPLETED</span>
+            </div>
+
+            <h2 style="color: #059669; margin-top: 0; text-align: center;">${item.name}</h2>
+
+            <div class="info-row">
+              <span class="info-label">Transaction ID:</span>
+              <span>${payment.meta?.paymentId || payment._id}</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Booking ID:</span>
+              <span>${booking._id}</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Amount Paid:</span>
+              <span style="font-size: 1.1em; font-weight: bold;">₹${payment.amount}</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Payment Date:</span>
+              <span>${dayjs().format('MMMM D, YYYY')}</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Payment Method:</span>
+              <span>Razorpay</span>
+            </div>
+
+            <div class="info-row">
+              <span class="info-label">Status:</span>
+              <span style="color: #10b981; font-weight: bold;">Paid & Confirmed</span>
+            </div>
+          </div>
+
+          <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="color: #059669; margin-top: 0;">📅 Your Booking Details</h3>
+            <p>
+              <strong>Date:</strong> ${dayjs(booking.date).format('dddd, MMMM D, YYYY')}<br>
+              <strong>Time:</strong> ${booking.time || 'To be confirmed'}<br>
+              <strong>Participants:</strong> ${booking.participants} ${booking.participants === 1 ? 'person' : 'people'}
+            </p>
+            ${booking.specialRequests ? `<p><strong>Special Requests:</strong> ${booking.specialRequests}</p>` : ''}
+          </div>
+
+          <h3>What's Next?</h3>
+          <ul>
+            <li>Save this email as your payment receipt</li>
+            <li>You'll receive a reminder 24 hours before your booking</li>
+            <li>Download your booking receipt from your account</li>
+            <li>Please arrive 15 minutes early</li>
+          </ul>
+
+          <center>
+            <a href="${process.env.FRONTEND_URL}/bookings/${booking._id}" class="button">
+              View Booking & Download Receipt
+            </a>
+          </center>
+
+          <p style="margin-top: 30px; padding: 15px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px;">
+            <strong>💡 Tip:</strong> Add this booking to your calendar so you don't miss it!
+          </p>
+        </div>
+
+        <div class="footer">
+          <p>Questions? Contact us at support@myguide.com</p>
+          <p>This is your official payment receipt. Please keep it for your records.</p>
+          <p>&copy; ${new Date().getFullYear()} My Guide. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: `"My Guide" <${process.env.EMAIL_USER}>`,
+    to: user.email,
+    subject: subject,
+    html: html,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    if (DEV) {
+      console.log('✅ Payment confirmation email sent:', info.messageId);
+    }
+    return info;
+  } catch (error) {
+    console.error('❌ Error sending payment confirmation email:', error);
+    throw error;
+  }
+};
+
 export default {
   sendBookingConfirmation,
   sendBookingReminder,
   sendCancellationEmail,
+  sendPaymentConfirmation,
 };
