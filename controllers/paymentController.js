@@ -12,48 +12,46 @@ const DEV = process.env.NODE_ENV !== 'production';
  */
 export const createPaymentOrder = async (req, res, next) => {
   try {
-    const { bookingId, amount } = z.object({
+    // Accept only bookingId from client — amount comes from DB, never from the client
+    const { bookingId } = z.object({
       bookingId: z.string(),
-      amount: z.number().positive(),
     }).parse(req.body);
 
-    // Verify booking exists and belongs to user
     const booking = await Booking.findById(bookingId)
       .populate("activity", "title name")
       .populate("place", "name title");
 
-    if (!booking) {
-      throw createError(404, "Booking not found");
-    }
-
-    if (booking.user.toString() !== req.user.id) {
+    if (!booking) throw createError(404, "Booking not found");
+    if (booking.user.toString() !== req.user.id)
       throw createError(403, "Not authorized to pay for this booking");
-    }
-
-    if (booking.paymentStatus === "paid") {
+    if (booking.paymentStatus === "paid")
       throw createError(400, "Booking is already paid");
-    }
+    if (!booking.totalAmount || booking.totalAmount <= 0)
+      throw createError(400, "Booking has no payable amount");
 
-    // Create Razorpay order
-    const receipt = `booking_${bookingId}_${Date.now()}`;
+    // Amount from the DB — client cannot tamper with the price
+    const amountInPaise = Math.round(booking.totalAmount * 100);
+    if (amountInPaise < 100) throw createError(400, "Minimum payable amount is ₹1");
+
+    const receipt = `bkg_${bookingId}`;
     const razorpayOrder = await createOrder({
-      amount: Math.round(amount * 100), // Convert to paise
+      amount: amountInPaise,
       currency: "INR",
-      receipt
+      receipt,
     });
 
-    // Create payment record
+    // Persist the order ID on the booking for signature verification later
+    booking.razorpayOrderId = razorpayOrder.id;
+    await booking.save();
+
+    // Create a payment record in "created" state
     const payment = await Payment.create({
-      amount,
+      amount: booking.totalAmount,
       currency: "INR",
       provider: "razorpay",
       status: "created",
       providerRef: razorpayOrder.id,
-      meta: {
-        bookingId,
-        receipt,
-        razorpayOrderId: razorpayOrder.id
-      }
+      meta: { bookingId, receipt, razorpayOrderId: razorpayOrder.id },
     });
 
     if (DEV) console.log("💳 Payment order created:", payment._id);
@@ -61,15 +59,14 @@ export const createPaymentOrder = async (req, res, next) => {
     res.status(201).json({
       message: "Payment order created successfully",
       data: {
-        payment,
         orderId: razorpayOrder.id,
-        amount: razorpayOrder.amount,
+        amount: razorpayOrder.amount,   // paise
         currency: razorpayOrder.currency,
-        keyId: process.env.RAZORPAY_KEY_ID
-      }
+        keyId: process.env.RAZORPAY_KEY_ID,
+      },
     });
   } catch (err) {
-    console.error("❌ Create payment order error:", err);
+    if (DEV) console.error("❌ Create payment order error:", err);
     next(err);
   }
 };
@@ -83,70 +80,61 @@ export const verifyPayment = async (req, res, next) => {
       orderId: z.string(),
       paymentId: z.string(),
       signature: z.string(),
-      bookingId: z.string()
+      bookingId: z.string(),
     }).parse(req.body);
 
-    // Verify signature
+    // ── 1. Verify Razorpay HMAC-SHA256 signature ────────────────────────────
     const isValid = verifySignature({ orderId, paymentId, signature });
+    if (!isValid) throw createError(400, "Invalid payment signature");
 
-    if (!isValid) {
-      throw createError(400, "Invalid payment signature");
-    }
-
-    // Find payment record
-    const payment = await Payment.findOne({ providerRef: orderId });
-    if (!payment) {
-      throw createError(404, "Payment record not found");
-    }
-
-    // Update payment status
-    payment.status = "paid";
-    payment.meta = {
-      ...payment.meta,
-      paymentId,
-      signature,
-      paidAt: new Date()
-    };
-    await payment.save();
-
-    // Update booking
+    // ── 2. Load booking and authorise ───────────────────────────────────────
     const booking = await Booking.findById(bookingId)
       .populate("activity", "title name price basePrice")
       .populate("place", "name title price basePrice")
       .populate("user", "name email");
 
-    if (!booking) {
-      throw createError(404, "Booking not found");
+    if (!booking) throw createError(404, "Booking not found");
+    if (booking.user._id?.toString() !== req.user.id)
+      throw createError(403, "Forbidden");
+
+    // Prevent order-substitution: the orderId must match what we created
+    if (booking.razorpayOrderId && booking.razorpayOrderId !== orderId)
+      throw createError(400, "Order ID does not match booking");
+
+    // Idempotent: already processed
+    if (booking.paymentStatus === "paid") {
+      return res.json({
+        message: "Payment already recorded",
+        data: { bookingId: booking._id, success: true },
+      });
     }
 
+    // ── 3. Update booking ───────────────────────────────────────────────────
     booking.status = "confirmed";
     booking.paymentStatus = "paid";
     booking.paymentId = paymentId;
     await booking.save();
 
-    if (DEV) console.log("✅ Payment verified and booking updated:", bookingId);
+    // ── 4. Update payment record ────────────────────────────────────────────
+    const payment = await Payment.findOneAndUpdate(
+      { providerRef: orderId },
+      { status: "paid", $set: { "meta.paymentId": paymentId, "meta.paidAt": new Date() } },
+      { new: true }
+    );
 
-    // Send payment confirmation email
+    if (DEV) console.log("✅ Payment verified, booking confirmed:", bookingId);
+
+    // Fire-and-forget confirmation email
     const item = booking.activity || booking.place;
-    const user = booking.user || {
-      name: booking.customer?.name,
-      email: booking.customer?.email
-    };
-
-    sendPaymentConfirmation(booking, user, item, payment).catch(err => {
-      console.error('Failed to send payment confirmation email:', err);
-    });
+    const user = booking.user || { name: booking.customer?.name, email: booking.customer?.email };
+    sendPaymentConfirmation(booking, user, item, payment).catch(() => {});
 
     res.json({
       message: "Payment verified successfully",
-      data: {
-        payment,
-        booking,
-        success: true
-      }
+      data: { bookingId: booking._id, success: true },
     });
   } catch (err) {
-    console.error("❌ Verify payment error:", err);
+    if (DEV) console.error("❌ Verify payment error:", err);
     next(err);
   }
 };

@@ -1,33 +1,32 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { validateObjectIdParam } from "../middleware/objectIdParam.js";
 import {
   createPaymentOrder,
   verifyPayment,
   handleWebhook,
   getPaymentById,
   listPayments,
-  markPaid
+  markPaid,
 } from "../controllers/paymentController.js";
 
-const r = Router();
+const router = Router();
 
-// Create Razorpay order for booking payment
-r.post("/create-order", requireAuth, createPaymentOrder);
+// Create a Razorpay order for a booking (amount taken from DB, not client)
+router.post("/create-order", requireAuth, createPaymentOrder);
 
-// Verify payment after successful Razorpay checkout
-r.post("/verify", requireAuth, verifyPayment);
+// Verify Razorpay signature and confirm booking as paid
+router.post("/verify", requireAuth, verifyPayment);
 
-// Razorpay webhook endpoint (no auth - Razorpay sends the webhook)
-r.post("/webhook", handleWebhook);
+// Razorpay webhook — no JWT auth, Razorpay signs the payload itself
+router.post("/webhook", handleWebhook);
 
-// Get payment by ID
-r.get("/:id", requireAuth, validateObjectIdParam("id"), getPaymentById);
+// List payments
+router.get("/", requireAuth, listPayments);
 
-// List payments (admin or user's own)
-r.get("/", requireAuth, listPayments);
+// Get single payment
+router.get("/:id", requireAuth, getPaymentById);
 
-// Mark payment as paid (admin only - for manual processing)
-r.patch("/:id/paid", requireAuth, requireRole("admin"), validateObjectIdParam("id"), markPaid);
+// Admin: manually mark paid
+router.patch("/:id/mark-paid", requireAuth, requireRole("admin"), markPaid);
 
-export default r;
+export default router;
