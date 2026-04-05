@@ -60,6 +60,10 @@ const bookingSchema = new mongoose.Schema(
     pricing: {
       basePrice: { type: Number, default: 0 },
       subtotal: { type: Number, default: 0 },
+      groupDiscount: { type: Number, default: 0 },
+      groupDiscountRate: { type: Number, default: 0 },
+      promoCode: { type: String, default: "" },
+      promoDiscount: { type: Number, default: 0 },
       tax: { type: Number, default: 0 },
       serviceFee: { type: Number, default: 0 },
       promoOff: { type: Number, default: 0 },

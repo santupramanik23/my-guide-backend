@@ -17,9 +17,9 @@ export const createPaymentOrder = async (req, res, next) => {
       bookingId: z.string(),
     }).parse(req.body);
 
-    const booking = await Booking.findById(bookingId)
-      .populate("activity", "title name")
-      .populate("place", "name title");
+    const booking = await Booking.findById(bookingId).select(
+      "user paymentStatus totalAmount razorpayOrderId"
+    );
 
     if (!booking) throw createError(404, "Booking not found");
     if (booking.user.toString() !== req.user.id)
@@ -40,19 +40,19 @@ export const createPaymentOrder = async (req, res, next) => {
       receipt,
     });
 
-    // Persist the order ID on the booking for signature verification later
+    // Persist the order ID and payment record concurrently.
     booking.razorpayOrderId = razorpayOrder.id;
-    await booking.save();
-
-    // Create a payment record in "created" state
-    const payment = await Payment.create({
-      amount: booking.totalAmount,
-      currency: "INR",
-      provider: "razorpay",
-      status: "created",
-      providerRef: razorpayOrder.id,
-      meta: { bookingId, receipt, razorpayOrderId: razorpayOrder.id },
-    });
+    const [payment] = await Promise.all([
+      Payment.create({
+        amount: booking.totalAmount,
+        currency: "INR",
+        provider: "razorpay",
+        status: "created",
+        providerRef: razorpayOrder.id,
+        meta: { bookingId, receipt, razorpayOrderId: razorpayOrder.id },
+      }),
+      booking.save(),
+    ]);
 
     if (DEV) console.log("💳 Payment order created:", payment._id);
 

@@ -9,6 +9,13 @@ import { getRecommendationsForBooking } from "../services/recommendationService.
 
 const DEV = process.env.NODE_ENV !== 'production';
 
+function getGroupDiscountRate(participants) {
+  if (participants >= 21) return 0.15;
+  if (participants >= 11) return 0.10;
+  if (participants >= 5) return 0.05;
+  return 0;
+}
+
 // Create Booking
 export const createBooking = async (req, res, next) => {
   try {
@@ -41,14 +48,21 @@ export const createBooking = async (req, res, next) => {
       if (item) {
         const basePrice = item.price || item.basePrice || PRICING.DEFAULT_BASE_PRICE;
         const subtotal = basePrice * participants;
+        const groupDiscountRate = getGroupDiscountRate(participants);
+        const groupDiscount = Math.floor(subtotal * groupDiscountRate);
         const tax = Math.round(subtotal * PRICING.TAX_RATE);
         const serviceFee = Math.round(subtotal * PRICING.SERVICE_FEE_RATE);
-        const promoOff = pricing.promoOff || 0;
+        const promoDiscount = pricing.promoDiscount || 0;
+        const promoOff = pricing.promoOff || (groupDiscount + promoDiscount);
         totalAmount = Math.max(0, subtotal + tax + serviceFee - promoOff);
         
         pricing = {
           basePrice,
           subtotal,
+          groupDiscount,
+          groupDiscountRate,
+          promoCode: pricing.promoCode || "",
+          promoDiscount,
           tax,
           serviceFee,
           promoOff,
